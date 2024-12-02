@@ -1,0 +1,571 @@
+// ignore_for_file: use_key_in_widget_constructors, prefer_const_constructors_in_immutables, library_private_types_in_public_api, prefer_const_constructors, unnecessary_string_interpolations, unused_local_variable, unnecessary_brace_in_string_interps, non_constant_identifier_names, use_build_context_synchronously, unused_import
+
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zzz/chef/chef_about.dart';
+import 'package:zzz/chef/chef_profile.dart';
+import 'package:zzz/chef/chef_promotion.dart';
+import 'package:zzz/chef/chef_update_queue.dart';
+import 'package:zzz/chef/resetpassword.dart';
+
+import '../login.dart';
+import '../rider/rider_address.dart';
+import '../setting.dart';
+import 'chef_address.dart';
+import 'food_menu_chef.dart';
+
+class FoodMenuItem {
+  final String name;
+  final double price;
+  final String menu_pics;
+
+  FoodMenuItem({
+    required this.name,
+    required this.price,
+    required this.menu_pics,
+  });
+
+  factory FoodMenuItem.fromJson(Map<String, dynamic> json) {
+    return FoodMenuItem(
+      name: json['menu_name'],
+      price: json['menu_price'] is String
+          ? double.tryParse(json['menu_price']) ?? 0.0
+          : (json['menu_price'] is int
+              ? (json['menu_price'] as int).toDouble()
+              : (json['menu_price'] as double)),
+      menu_pics: json['menu_pics'],
+    );
+  }
+}
+
+class PromotionPage {
+  final String promotion_name;
+  final String code;
+  final String discount_amount;
+  final String image_url;
+
+  PromotionPage({
+    required this.promotion_name,
+    required this.code,
+    required this.discount_amount,
+    required this.image_url,
+  });
+
+  factory PromotionPage.fromJson(Map<String, dynamic> json) {
+    return PromotionPage(
+      promotion_name: json['promotion_name'],
+      code: json['code'],
+      discount_amount: json['discount_amount'],
+      image_url: json['image_url'],
+    );
+  }
+
+  String get imageUrl => image_url;
+}
+
+class HomePageChef extends StatefulWidget {
+  final String username;
+  final int locationId;
+
+  HomePageChef({required this.username, required this.locationId});
+
+  @override
+  _HomePageChefState createState() => _HomePageChefState();
+}
+
+class _HomePageChefState extends State<HomePageChef> {
+  late final PageController pageController;
+  late Future<List<PromotionPage>> futurePromotions;
+  late Future<List<FoodMenuItem>> futureFoodMenu;
+  dynamic userData;
+
+  Future<void> _logout() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    prefs.setBool('isLoggedIn', false); // ปรับค่า isLoggedIn เป็น false
+    // เพิ่มโค้ดอื่น ๆ ตามความเหมาะสม เช่น เคลียร์ข้อมูลที่เก็บไว้ในแอปพลิเคชัน
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+          builder: (context) => LoginPage(
+                locationId: widget.locationId,
+              )), // นำผู้ใช้กลับไปหน้า Login
+    );
+  }
+
+  Future<List<FoodMenuItem>> fetchFoodMenu() async {
+    final response = await http.get(
+      Uri.parse('http://$ip/restarant_papai/flutter1/foodmenu_page.php'),
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((json) {
+        try {
+          return FoodMenuItem.fromJson(json);
+        } catch (e) {
+          print('Error parsing FoodMenuItem: $e');
+          // สามารถจัดการกับข้อผิดพลาดในการแปลง JSON ได้ที่นี่
+          throw Exception('Error parsing FoodMenuItem: $e');
+        }
+      }).toList();
+    } else {
+      // สามารถจัดการกับข้อผิดพลาดที่เกิดขึ้นในการร้องขอ HTTP ได้ที่นี่
+      throw Exception('Failed to load food menu');
+    }
+  }
+
+  Future<void> _refreshPromotions() async {
+    setState(() {});
+    futurePromotions = fetchPromotions();
+    futureFoodMenu = fetchFoodMenu();
+  }
+
+  @override
+  void initState() {
+    pageController = PageController();
+    super.initState();
+    _fetchUserData();
+    futurePromotions = fetchPromotions();
+    futureFoodMenu = fetchFoodMenu();
+  }
+
+  Future<List<PromotionPage>> fetchPromotions() async {
+    final response = await http.get(
+        Uri.parse('http://$ip/restarant_papai/flutter1/promotion_page.php'));
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((json) => PromotionPage.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load promotions');
+    }
+  }
+
+  Future<void> _fetchUserData() async {
+    try {
+      var response = await http.get(
+        Uri.parse(
+            'http://$ip/restarant_papai/flutter1/profile.php?username=${widget.username}'),
+      );
+
+      if (response.statusCode == 200) {
+        Map<String, dynamic> userData = json.decode(response.body);
+
+        setState(() {
+          userData = userData; // กำหนดค่าให้กับตัวแปร userData ใน State
+        });
+      } else {
+        // Handle API error here
+      }
+    } catch (e) {
+      // Handle connection or other errors here
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            SizedBox(
+              width: 100,
+            ),
+            Container(
+              child: Image.asset(
+                'assets/logo.png',
+                width: 70,
+                height: 70,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orangeAccent,
+        centerTitle: true,
+        leading: Builder(
+          builder: (context) => IconButton(
+            onPressed: () {
+              Scaffold.of(context).openDrawer();
+            },
+            icon: Icon(
+              Icons.menu,
+              size: 35,
+            ),
+          ),
+        ),
+        actions: [
+          Container(
+            width: 70,
+            child: Text(widget.username,
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w400),
+                overflow: TextOverflow.ellipsis),
+          ),
+          Padding(
+            padding: EdgeInsets.only(right: 13.0),
+            child: Icon(
+              Icons.account_circle_sharp,
+              size: 40,
+              color: Colors.black,
+            ),
+          ),
+        ],
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.only(),
+          children: <Widget>[
+            Container(
+              height: 130,
+              child: UserAccountsDrawerHeader(
+                decoration: BoxDecoration(
+                  color: Colors.orangeAccent,
+                ),
+                accountName: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Chef: ${widget.username}',
+                      style: TextStyle(color: Colors.white, fontSize: 30),
+                    ),
+                  ],
+                ),
+                accountEmail: Text(''),
+              ),
+            ),
+
+            ListTile(
+              leading: Icon(Icons.home),
+              title: Text('หน้าหลัก'),
+              onTap: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.people),
+              title: Text('โปรไฟล์'),
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) {
+                  return ProfilePageChef(username: widget.username);
+                }));
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.assignment_late_outlined),
+              title: Text('เกี่ยวกับร้าน'),
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) {
+                  return AboutChef();
+                }));
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.location_pin),
+              title: Text('ที่อยู่ของฉัน'),
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) {
+                  return UserAddressChef(username: widget.username);
+                }));
+              },
+            ),
+            ElevatedButton(
+              onPressed: () {
+                {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) {
+                    return ResetPasswordPage(
+                      username: widget.username,
+                    );
+                  }));
+                }
+              },
+              child: Text('แก้ไขรหัสผ่าน'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                _logout(); // เรียกฟังก์ชัน _logout() เมื่อผู้ใช้กดปุ่มออกจากระบบ
+              },
+              child: Text('ออกจากระบบ'),
+            )
+
+            // เพิ่มเมนูอื่นๆ ตามต้องการ
+          ],
+        ),
+      ),
+      // ข่าวประชาสัมพันธ์ -----------------------------------------------------------------------------------------------
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _refreshPromotions, // เพิ่มการรีเฟรชด้วยการลากนิ้ว
+          child: SingleChildScrollView(
+            physics: AlwaysScrollableScrollPhysics(),
+            child: Column(
+              children: [
+                Container(
+                  height: 200,
+                  child: FutureBuilder<List<PromotionPage>>(
+                    future: futurePromotions,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const CircularProgressIndicator();
+                      } else if (snapshot.hasError) {
+                        return Container(
+                          margin: const EdgeInsets.only(
+                            left: 50,
+                            right: 50,
+                            top: 20,
+                            bottom: 20,
+                          ),
+                          height: 150,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20.0),
+                            color: Colors.orangeAccent,
+                            image: DecorationImage(
+                              image: NetworkImage(
+                                'http://$ip/restarant_papai/image/logopage.png',
+                              ), // Path to gg.jpg
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ); //Text('Error: ${snapshot.error}');
+                      } else {
+                        final promotions = snapshot.data;
+                        return PageView.builder(
+                          controller: pageController,
+                          itemBuilder: (_, index) {
+                            final promotion = promotions![index];
+                            return Container(
+                              margin: const EdgeInsets.only(
+                                left: 50,
+                                right: 50,
+                                top: 20,
+                                bottom: 20,
+                              ),
+                              height: 150,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20.0),
+                                color: Colors.orangeAccent,
+                                image: DecorationImage(
+                                  image: NetworkImage(
+                                    'http://$ip/restarant_papai/upload/promotion/${promotion.imageUrl}',
+                                  ),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            );
+                          },
+                          itemCount: promotions?.length ?? 0,
+                        );
+                      }
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 15.0),
+                  child: Column(
+                    children: [
+                      // ตัวเลือก
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Column(
+                            children: [
+                              Container(
+                                height: 70,
+                                width: 70,
+                                decoration: BoxDecoration(
+                                  color: Color.fromARGB(255, 198, 190, 190),
+                                  borderRadius: BorderRadius.circular(50),
+                                ),
+                                padding: EdgeInsets.all(0),
+                                child: Center(
+                                  child: IconButton(
+                                    onPressed: () {
+                                      Navigator.push(context,
+                                          MaterialPageRoute(builder: (context) {
+                                        return PromotionChef();
+                                      }));
+                                    },
+                                    icon: Icon(
+                                      Icons.menu_open,
+                                      size: 35,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                height: 8,
+                              ),
+                              Text('โปรโมชั่น'),
+                            ],
+                          ),
+                          Column(
+                            children: [
+                              Container(
+                                height: 70,
+                                width: 70,
+                                decoration: BoxDecoration(
+                                  color: Color.fromARGB(255, 198, 190, 190),
+                                  borderRadius: BorderRadius.circular(50),
+                                ),
+                                padding: EdgeInsets.all(0),
+                                child: Center(
+                                  child: IconButton(
+                                    onPressed: () {
+                                      Navigator.push(context,
+                                          MaterialPageRoute(builder: (context) {
+                                        return FoodMenuChef(
+                                          username: widget.username,
+                                        );
+                                      }));
+                                    },
+                                    icon: Icon(
+                                      Icons.food_bank_rounded,
+                                      size: 35,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                height: 8,
+                              ),
+                              Text('จัดการเมนูอาหาร'),
+                            ],
+                          ),
+                          Column(
+                            children: [
+                              Container(
+                                height: 70,
+                                width: 70,
+                                decoration: BoxDecoration(
+                                  color: Color.fromARGB(255, 198, 190, 190),
+                                  borderRadius: BorderRadius.circular(50),
+                                ),
+                                padding: EdgeInsets.all(0),
+                                child: Center(
+                                  child: IconButton(
+                                    onPressed: () {
+                                      Navigator.push(context,
+                                          MaterialPageRoute(builder: (context) {
+                                        return UpdateQueuePageChef();
+                                      }));
+                                    },
+                                    icon: Icon(
+                                      Icons.show_chart,
+                                      size: 35,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                height: 8,
+                              ),
+                              Text('อัปเดทคิว'),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  children: <Widget>[
+                    FutureBuilder<List<FoodMenuItem>>(
+                      future: futureFoodMenu,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const CircularProgressIndicator();
+                        } else if (snapshot.hasError) {
+                          return Text('Error: ${snapshot.error}');
+                        } else if (!snapshot.hasData ||
+                            snapshot.data!.isEmpty) {
+                          return const Text('No food menu available.');
+                        } else {
+                          final foodMenuItems = snapshot.data!;
+                          return Container(
+                            height: 400,
+                            child: GridView.builder(
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2, // 2 คอลัมน์ใน GridView
+                                crossAxisSpacing:
+                                    20.0, // ระยะห่างระหว่างคอลัมน์
+                                mainAxisSpacing: 8.0, // ระยะห่างระหว่างแถว
+                              ),
+                              itemBuilder: (_, index) {
+                                final foodMenuItem = foodMenuItems[index];
+                                final imageUrl =
+                                    'http://$ip/restarant_papai/upload/menu/${foodMenuItem.menu_pics}';
+                                return GestureDetector(
+                                  onTap: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) {
+                                        return AlertDialog(
+                                          title: Text(''), // แสดงชื่ออาหาร
+                                          content: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
+                                            children: [
+                                              Image.network(
+                                                imageUrl,
+                                                fit: BoxFit.cover,
+                                                height: 300,
+                                                width: 300,
+                                              ), // แสดงรูปภาพ
+                                              SizedBox(height: 8),
+                                              Text(foodMenuItem.name),
+                                              SizedBox(height: 8),
+                                              Text(
+                                                  'ราคา: ${foodMenuItem.price} บาท'), // แสดงราคา
+                                            ],
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () {
+                                                Navigator.of(context).pop();
+                                              },
+                                              child: Text('ปิด'),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    );
+                                  },
+                                  child: Card(
+                                    margin: const EdgeInsets.all(8.0),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20.0),
+                                    ),
+                                    elevation: 5,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(20.0),
+                                      child: Image.network(
+                                        imageUrl,
+                                        fit: BoxFit.cover,
+                                        height: 125,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                              itemCount: foodMenuItems.length,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                )
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
